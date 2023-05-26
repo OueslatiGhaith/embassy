@@ -12,7 +12,7 @@ use crate::ipcc::Ipcc;
 pub struct Sys;
 
 impl Sys {
-    pub(crate) fn init(ipcc: &mut Ipcc) -> Self {
+    pub(crate) fn new() -> Self {
         unsafe {
             LinkedListNode::init_head(SYSTEM_EVT_QUEUE.as_mut_ptr());
 
@@ -22,12 +22,12 @@ impl Sys {
             });
         }
 
-        ipcc.c1_set_rx_channel(channels::Cpu2Channel::SystemEvent.into(), true);
+        Ipcc::c1_set_rx_channel(channels::cpu2::IPCC_SYSTEM_EVENT_CHANNEL, true);
 
         Sys
     }
 
-    pub(crate) fn evt_handler(ipcc: &mut Ipcc) {
+    pub(crate) fn evt_handler() {
         unsafe {
             let mut node_ptr = core::ptr::null_mut();
             let node_ptr_ptr: *mut _ = &mut node_ptr;
@@ -43,11 +43,11 @@ impl Sys {
             }
         }
 
-        ipcc.c1_clear_flag_channel(channels::Cpu2Channel::SystemEvent.into());
+        Ipcc::c1_clear_flag_channel(channels::cpu2::IPCC_SYSTEM_EVENT_CHANNEL);
     }
 
-    pub(crate) fn cmd_evt_handler(ipcc: &mut Ipcc) -> CcEvt {
-        ipcc.c1_set_tx_channel(channels::Cpu1Channel::SystemCmdRsp.into(), false);
+    pub(crate) fn cmd_evt_handler() -> CcEvt {
+        Ipcc::c1_set_tx_channel(channels::cpu1::IPCC_SYSTEM_CMD_RSP_CHANNEL, false);
 
         // ST's command response data structure is really convoluted.
         //
@@ -67,7 +67,8 @@ impl Sys {
         }
     }
 
-    pub(crate) fn send_cmd(ipcc: &mut Ipcc, buf: &[u8]) {
+    #[allow(dead_code)]
+    pub(crate) fn send_cmd(buf: &[u8]) {
         unsafe {
             let cmd_buffer = &mut *(*TL_REF_TABLE.assume_init().sys_table).pcmd_buffer;
             let cmd_serial: *mut CmdSerial = &mut cmd_buffer.cmd_serial;
@@ -78,8 +79,8 @@ impl Sys {
             let cmd_packet = &mut *(*TL_REF_TABLE.assume_init().sys_table).pcmd_buffer;
             cmd_packet.cmd_serial.ty = TlPacketType::SysCmd as u8;
 
-            ipcc.c1_set_flag_channel(channels::Cpu1Channel::SystemCmdRsp.into());
-            ipcc.c1_set_tx_channel(channels::Cpu1Channel::SystemCmdRsp.into(), true);
+            Ipcc::c1_set_flag_channel(channels::cpu1::IPCC_SYSTEM_CMD_RSP_CHANNEL);
+            Ipcc::c1_set_tx_channel(channels::cpu1::IPCC_SYSTEM_CMD_RSP_CHANNEL, true);
         }
     }
 }

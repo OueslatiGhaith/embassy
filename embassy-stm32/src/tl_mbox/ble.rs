@@ -16,7 +16,7 @@ use crate::tl_mbox::cmd::CmdPacket;
 pub struct Ble;
 
 impl Ble {
-    pub(crate) fn init(ipcc: &mut Ipcc) -> Self {
+    pub(crate) fn new() -> Self {
         unsafe {
             LinkedListNode::init_head(EVT_QUEUE.as_mut_ptr());
 
@@ -28,12 +28,12 @@ impl Ble {
             });
         }
 
-        ipcc.c1_set_rx_channel(channels::Cpu2Channel::BleEvent.into(), true);
+        Ipcc::c1_set_rx_channel(channels::cpu2::IPCC_BLE_EVENT_CHANNEL, true);
 
         Ble
     }
 
-    pub(crate) fn evt_handler(ipcc: &mut Ipcc) {
+    pub(crate) fn evt_handler() {
         unsafe {
             let mut node_ptr = core::ptr::null_mut();
             let node_ptr_ptr: *mut _ = &mut node_ptr;
@@ -48,14 +48,10 @@ impl Ble {
             }
         }
 
-        ipcc.c1_clear_flag_channel(channels::Cpu2Channel::BleEvent.into());
+        Ipcc::c1_clear_flag_channel(channels::cpu2::IPCC_BLE_EVENT_CHANNEL);
     }
 
-    pub(crate) fn acl_data_evt_handler(ipcc: &mut Ipcc) {
-        ipcc.c1_set_tx_channel(channels::Cpu1Channel::HciAclData.into(), false);
-    }
-
-    pub(crate) fn send_cmd(ipcc: &mut Ipcc, buf: &[u8]) {
+    pub(crate) fn send_cmd(buf: &[u8]) {
         unsafe {
             let pcmd_buffer: *mut CmdPacket = (*TL_REF_TABLE.assume_init().ble_table).pcmd_buffer;
             let pcmd_serial: *mut CmdSerial = &mut (*pcmd_buffer).cmd_serial;
@@ -67,17 +63,17 @@ impl Ble {
             cmd_packet.cmd_serial.ty = TlPacketType::BleCmd as u8;
         }
 
-        ipcc.c1_set_flag_channel(channels::Cpu1Channel::BleCmd.into());
+        Ipcc::c1_set_flag_channel(channels::cpu1::IPCC_BLE_CMD_CHANNEL);
     }
 
-    pub(crate) fn send_acl_data(ipcc: &mut Ipcc) {
+    pub(crate) fn send_acl_data() {
         unsafe {
             (*(*TL_REF_TABLE.assume_init().ble_table).phci_acl_data_buffer)
                 .acl_data_serial
                 .ty = TlPacketType::AclData as u8;
         }
 
-        ipcc.c1_set_flag_channel(channels::Cpu1Channel::HciAclData.into());
-        ipcc.c1_set_tx_channel(channels::Cpu1Channel::HciAclData.into(), true);
+        Ipcc::c1_set_flag_channel(channels::Cpu1Channel::HciAclData.into());
+        Ipcc::c1_set_tx_channel(channels::Cpu1Channel::HciAclData.into(), true);
     }
 }
