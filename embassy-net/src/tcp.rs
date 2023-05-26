@@ -95,8 +95,7 @@ impl<'a> TcpWriter<'a> {
 
     /// Flushes the written data to the socket.
     ///
-    /// This waits until all data has been sent, and ACKed by the remote host. For a connection
-    /// closed with [`abort()`](TcpSocket::abort) it will wait for the TCP RST packet to be sent.
+    /// This waits until all data has been sent, and ACKed by the remote host.
     pub async fn flush(&mut self) -> Result<(), Error> {
         self.io.flush().await
     }
@@ -199,8 +198,7 @@ impl<'a> TcpSocket<'a> {
 
     /// Flushes the written data to the socket.
     ///
-    /// This waits until all data has been sent, and ACKed by the remote host. For a connection
-    /// closed with [`abort()`](TcpSocket::abort) it will wait for the TCP RST packet to be sent.
+    /// This waits until all data has been sent, and ACKed by the remote host.
     pub async fn flush(&mut self) -> Result<(), Error> {
         self.io.flush().await
     }
@@ -264,11 +262,6 @@ impl<'a> TcpSocket<'a> {
     ///
     /// This instantly closes both the read and write halves of the socket. Any pending data
     /// that has not been sent will be lost.
-    ///
-    /// Note that the TCP RST packet is not sent immediately - if the `TcpSocket` is dropped too soon
-    /// the remote host may not know the connection has been closed.
-    /// `abort()` callers should wait for a [`flush()`](TcpSocket::flush) call to complete before
-    /// dropping or reusing the socket.
     pub fn abort(&mut self) {
         self.io.with_mut(|s, _| s.abort())
     }
@@ -354,10 +347,9 @@ impl<'d> TcpIo<'d> {
     async fn flush(&mut self) -> Result<(), Error> {
         poll_fn(move |cx| {
             self.with_mut(|s, _| {
-                let waiting_close = s.state() == tcp::State::Closed && s.remote_endpoint().is_some();
                 // If there are outstanding send operations, register for wake up and wait
                 // smoltcp issues wake-ups when octets are dequeued from the send buffer
-                if s.send_queue() > 0 || waiting_close {
+                if s.send_queue() > 0 {
                     s.register_send_waker(cx.waker());
                     Poll::Pending
                 // No outstanding sends, socket is flushed

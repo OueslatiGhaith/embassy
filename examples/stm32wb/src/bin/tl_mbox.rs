@@ -4,7 +4,7 @@
 
 use defmt::*;
 use embassy_executor::Spawner;
-use embassy_stm32::ipcc::Config;
+use embassy_stm32::ipcc::{Config, Ipcc};
 use embassy_stm32::tl_mbox::TlMbox;
 use embassy_stm32::{bind_interrupts, tl_mbox};
 use embassy_time::{Duration, Timer};
@@ -41,11 +41,13 @@ async fn main(_spawner: Spawner) {
         Note: extended stack versions are not supported at this time. Do not attempt to install a stack with "extended" in the name.
     */
 
-    let _p = embassy_stm32::init(Default::default());
+    let p = embassy_stm32::init(Default::default());
     info!("Hello World!");
 
     let config = Config::default();
-    let mbox = TlMbox::init(Irqs, config);
+    let mut ipcc = Ipcc::new(p.IPCC, config);
+
+    let mbox = TlMbox::init(&mut ipcc, Irqs);
 
     loop {
         let wireless_fw_info = mbox.wireless_fw_info();

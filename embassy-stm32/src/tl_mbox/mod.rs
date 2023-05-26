@@ -1,7 +1,6 @@
 use core::mem::MaybeUninit;
 
 use bit_field::BitField;
-use embassy_cortex_m::interrupt::{Interrupt, InterruptExt};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::Channel;
 
@@ -16,7 +15,7 @@ use self::shci::{shci_ble_init, ShciBleInitCmdParam};
 use self::sys::Sys;
 use self::unsafe_linked_list::LinkedListNode;
 use crate::interrupt;
-use crate::ipcc::{Config, Ipcc};
+use crate::ipcc::Ipcc;
 
 mod channels;
 mod cmd;
@@ -66,30 +65,13 @@ pub struct FusInfoTable {
 pub struct ReceiveInterruptHandler {}
 
 impl interrupt::Handler<interrupt::IPCC_C1_RX> for ReceiveInterruptHandler {
-    unsafe fn on_interrupt() {
-        if Ipcc::is_rx_pending(channels::cpu2::IPCC_SYSTEM_EVENT_CHANNEL) {
-            sys::Sys::evt_handler();
-        } else if Ipcc::is_rx_pending(channels::cpu2::IPCC_BLE_EVENT_CHANNEL) {
-            ble::Ble::evt_handler();
-        } else {
-            todo!()
-        }
-    }
+    unsafe fn on_interrupt() {}
 }
 
 pub struct TransmitInterruptHandler {}
 
 impl interrupt::Handler<interrupt::IPCC_C1_TX> for TransmitInterruptHandler {
-    unsafe fn on_interrupt() {
-        if Ipcc::is_tx_pending(channels::cpu1::IPCC_SYSTEM_CMD_RSP_CHANNEL) {
-            // TODO: handle this case
-            let _ = sys::Sys::cmd_evt_handler();
-        } else if Ipcc::is_tx_pending(channels::cpu1::IPCC_MM_RELEASE_BUFFER_CHANNEL) {
-            mm::MemoryManager::evt_handler();
-        } else {
-            todo!()
-        }
-    }
+    unsafe fn on_interrupt() {}
 }
 
 /// # Version
@@ -340,9 +322,9 @@ pub enum MailboxTarget {
 impl TlMbox {
     /// initializes low-level transport between CPU1 and BLE stack on CPU2
     pub fn init(
+        ipcc: &mut Ipcc,
         _irqs: impl interrupt::Binding<interrupt::IPCC_C1_RX, ReceiveInterruptHandler>
             + interrupt::Binding<interrupt::IPCC_C1_TX, TransmitInterruptHandler>,
-        config: Config,
     ) -> TlMbox {
         unsafe {
             TL_REF_TABLE = MaybeUninit::new(RefTable {
@@ -378,23 +360,34 @@ impl TlMbox {
             HCI_ACL_DATA_BUFFER = MaybeUninit::zeroed();
         }
 
-        Ipcc::init(config);
+        ipcc.init();
 
-        Sys::init();
+        Sys::init(ipcc);
         MemoryManager::init();
 
         #[cfg(feature = "ble")]
-        Ble::init();
+        Ble::init(ipcc);
 
         #[cfg(feature = "mac-802_15_4")]
-        Mac802_15_4::init();
+        Mac802_15_4::init(ipcc);
 
-        // enable interrupts
-        unsafe { crate::interrupt::IPCC_C1_RX::steal() }.unpend();
-        unsafe { crate::interrupt::IPCC_C1_TX::steal() }.unpend();
-
-        unsafe { crate::interrupt::IPCC_C1_RX::steal() }.enable();
-        unsafe { crate::interrupt::IPCC_C1_TX::steal() }.enable();
+        //        rx_irq.disable();
+        //        tx_irq.disable();
+        //
+        //        rx_irq.set_handler_context(ipcc.as_mut_ptr() as *mut ());
+        //        tx_irq.set_handler_context(ipcc.as_mut_ptr() as *mut ());
+        //
+        //        rx_irq.set_handler(|ipcc| {
+        //            let ipcc: &mut Ipcc = unsafe { &mut *ipcc.cast() };
+        //            Self::interrupt_ipcc_rx_handler(ipcc);
+        //        });
+        //        tx_irq.set_handler(|ipcc| {
+        //            let ipcc: &mut Ipcc = unsafe { &mut *ipcc.cast() };
+        //            Self::interrupt_ipcc_tx_handler(ipcc);
+        //        });
+        //
+        //        rx_irq.enable();
+        //        tx_irq.enable();
 
         Self
     }
@@ -411,31 +404,63 @@ impl TlMbox {
     }
 
     #[cfg(feature = "ble")]
-    pub fn shci_ble_init(&self, param: ShciBleInitCmdParam) {
-        shci_ble_init(param);
+    pub fn shci_ble_init(&self, ipcc: &mut Ipcc, param: ShciBleInitCmdParam) {
+        shci_ble_init(ipcc, param);
     }
 
-    pub fn send_cmd(&self, buf: &[u8], target: MailboxTarget) {
+    pub fn send_cmd(&self, ipcc: &mut Ipcc, buf: &[u8], target: MailboxTarget) {
         match target {
-            MailboxTarget::Sys => Sys::send_cmd(buf),
+            MailboxTarget::Sys => Sys::send_cmd(ipcc, buf),
             #[cfg(feature = "ble")]
-            MailboxTarget::Ble => Ble::send_cmd(buf),
+            MailboxTarget::Ble => Ble::send_cmd(ipcc, buf),
             #[cfg(feature = "mac-802_15_4")]
-            MailboxTarget::Mac802_15_4 => Mac802_15_4::send_cmd(buf),
+            MailboxTarget::Mac802_15_4 => Mac802_15_4::send_cmd(ipcc, buf),
         }
     }
 
-    pub fn send_ack(&self, target: MailboxTarget) {
+    pub fn send_ack(&self, ipcc: &mut Ipcc, target: MailboxTarget) {
         match target {
             #[cfg(feature = "ble")]
-            MailboxTarget::Ble => Ble::send_acl_data(),
+            MailboxTarget::Ble => Ble::send_acl_data(ipcc),
             #[cfg(feature = "mac-802_15_4")]
-            MailboxTarget::Mac802_15_4 => Mac802_15_4::send_ack(),
+            MailboxTarget::Mac802_15_4 => Mac802_15_4::send_ack(ipcc),
             MailboxTarget::Sys => { /* does nothing */ }
         }
     }
 
     pub async fn read(&self) -> EvtBox {
         TL_CHANNEL.recv().await
+    }
+
+    #[allow(dead_code)]
+    fn interrupt_ipcc_rx_handler(ipcc: &mut Ipcc) {
+        if ipcc.is_rx_pending(channels::Cpu2Channel::SystemEvent.into()) {
+            Sys::evt_handler(ipcc);
+        } else if cfg!(feature = "ble") && ipcc.is_rx_pending(channels::Cpu2Channel::BleEvent.into()) {
+            Ble::evt_handler(ipcc);
+        } else if cfg!(feature = "mac-802_15_4")
+            && ipcc.is_rx_pending(channels::Cpu2Channel::Mac802_15_4NotifAck.into())
+        {
+            Mac802_15_4::notif_evt_handler(ipcc);
+        } else {
+            todo!()
+        }
+    }
+
+    #[allow(dead_code)]
+    fn interrupt_ipcc_tx_handler(ipcc: &mut Ipcc) {
+        if ipcc.is_tx_pending(channels::Cpu1Channel::SystemCmdRsp.into()) {
+            // TODO: handle this case
+            let _ = Sys::cmd_evt_handler(ipcc);
+        } else if ipcc.is_tx_pending(channels::Cpu1Channel::MmReleaseBuffer.into()) {
+            MemoryManager::evt_handler(ipcc);
+        } else if cfg!(feature = "ble") && ipcc.is_tx_pending(channels::Cpu1Channel::HciAclData.into()) {
+            Ble::acl_data_evt_handler(ipcc);
+        } else if cfg!(feature = "mac-802_15_4") && ipcc.is_tx_pending(channels::Cpu1Channel::Mac802_15_4cmdRsp.into())
+        {
+            Mac802_15_4::cmd_evt_handler(ipcc)
+        } else {
+            todo!()
+        }
     }
 }
