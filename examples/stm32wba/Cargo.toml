@@ -57,10 +57,6 @@ required-features = ["ble"]
 name = "ble_dtm_runtime"
 required-features = ["ble"]
 
-[[bin]]
-name = "ble_hci_ab"
-required-features = ["ble"]
-
 
 [profile.release]
 debug = 2
