@@ -1000,6 +1000,14 @@ impl<'d> HCI<'d, Test> {
 }
 
 impl<'d, M: Mode> HCI<'d, M> {
+    /// Get a reference to the `bt-hci` controller
+    ///
+    /// Commands executed through it are sent as HCI packets via `BleStack_Request`
+    /// instead of the WBA BLE stack's C command functions.
+    pub fn controller(&self) -> &ControllerAdapter<'d> {
+        &self.controller
+    }
+
     /// Fully tear down the BLE stack and return the controller state.
     ///
     /// Terminates all connections, resets the HCI controller (which resets the radio
