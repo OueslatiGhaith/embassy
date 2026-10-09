@@ -40,6 +40,7 @@ ble = ["dep:embassy-stm32-wpan", "embassy-stm32-wpan/wba-ble", "embassy-stm32-wp
 
 [profile.release]
 debug = 2
+lto = "fat"
 
 [[bin]]
 name = "mac_ffd"
@@ -103,6 +104,10 @@ required-features = ["ble"]
 
 [[bin]]
 name = "ble_hci_ab"
+required-features = ["ble"]
+
+[[bin]]
+name = "ble_hci_ab_gatt"
 required-features = ["ble"]
 
 [[bin]]

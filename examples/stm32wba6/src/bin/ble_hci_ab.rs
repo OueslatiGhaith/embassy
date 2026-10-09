@@ -50,6 +50,12 @@ async fn time_async<R>(fut: impl Future<Output = R>) -> (u32, R) {
     (DWT::cycle_count() - start, r)
 }
 
+/// Let the BLE runner process pending stack work before the next sample.
+/// The sample loops never yield otherwise, so the runner would not run.
+async fn settle() {
+    Timer::after_millis(1).await;
+}
+
 struct Samples {
     ffi: [u32; N],
     hci: [u32; N],
@@ -100,6 +106,7 @@ fn stats(samples: &mut [u32]) -> Stats {
 macro_rules! bench {
     ($samples:expr, $ffi:expr, $hci:expr) => {{
         for i in 0..N {
+            settle().await;
             if i % 2 == 0 {
                 $samples.ffi[i] = time(|| $ffi).0;
                 $samples.hci[i] = time_async($hci).await.0;
@@ -173,6 +180,7 @@ async fn main(spawner: Spawner) {
     let mut start = Samples::new();
     let mut end = Samples::new();
     for i in 0..N {
+        settle().await;
         let tx = LeTransmitterTest::new(DTM_CHANNEL, DTM_DATA_LENGTH, DtmPacketPayload::Prbs9 as u8);
 
         start.ffi[i] = time(|| unwrap!(ble.dtm_transmit(DTM_CHANNEL, DTM_DATA_LENGTH, DtmPacketPayload::Prbs9))).0;
@@ -195,9 +203,8 @@ async fn main(spawner: Spawner) {
     s.report("AciHalLeTxTestPacketNumber", sysclk_mhz);
 
     info!("Done.");
-    loop {
-        Timer::after_secs(86400).await;
-    }
+
+    cortex_m::asm::bkpt();
 }
 
 /// Check that both paths return the same values.
