@@ -88,10 +88,22 @@ impl Default for ChannelPacket {
     }
 }
 
+/// HCI command buffer, also used for the response.
+///
+/// The packet starts 2 bytes past a 4-byte boundary. The stack's `ble_memcpy`
+/// copies by words only when source and destination share alignment, and this
+/// offset puts parameters such as GATT values (packet offset 10) on a word
+/// boundary.
+#[repr(C, align(4))]
+struct CmdBuf {
+    _pad: [u8; 2],
+    packet: [u8; 255],
+}
+
 pub struct Controller<'d> {
     _runtime: &'d mut Runtime,
     receiver: zerocopy_channel::Receiver<'static, CriticalSectionRawMutex, ChannelPacket>,
-    cmd_buf: ([u8; 255], usize),
+    cmd_buf: (CmdBuf, usize),
 }
 
 impl<'d> Controller<'d> {
@@ -156,7 +168,13 @@ impl<'d> Controller<'d> {
         #[allow(unused_mut)]
         let mut this = Self {
             receiver,
-            cmd_buf: ([0u8; 255], 0),
+            cmd_buf: (
+                CmdBuf {
+                    _pad: [0; 2],
+                    packet: [0; 255],
+                },
+                0,
+            ),
             _runtime: runtime,
         };
 
@@ -178,7 +196,7 @@ impl<'d> Controller<'d> {
         let bd_addr = [uid[0], uid[1], uid[2], 0xE1, 0x80, 0x00];
 
         {
-            let buf = &mut self.cmd_buf.0;
+            let buf = &mut self.cmd_buf.0.packet;
             buf[0] = 0x01; // H4 command packet indicator
             buf[1] = 0x0C; // ACI_HAL_WRITE_CONFIG_DATA (0xFC0C), little-endian
             buf[2] = 0xFC;
@@ -188,20 +206,20 @@ impl<'d> Controller<'d> {
             buf[6..12].copy_from_slice(&bd_addr);
         }
 
-        self.cmd_buf.1 = unsafe { BleStack_Request(self.cmd_buf.0.as_mut_ptr()) }.into();
+        self.cmd_buf.1 = unsafe { BleStack_Request(self.cmd_buf.0.packet.as_mut_ptr()) }.into();
         if self.cmd_buf.1 == 0 {
             error!("set_public_bd_addr: no response to ACI_HAL_WRITE_CONFIG_DATA");
         } else {
             info!(
                 "public BD address {:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X} (status 0x{:02X})",
-                bd_addr[5], bd_addr[4], bd_addr[3], bd_addr[2], bd_addr[1], bd_addr[0], self.cmd_buf.0[6]
+                bd_addr[5], bd_addr[4], bd_addr[3], bd_addr[2], bd_addr[1], bd_addr[0], self.cmd_buf.0.packet[6]
             );
         }
     }
 
     fn exec<R>(&mut self, f: impl FnOnce(&mut [u8; 255]) -> R) -> R {
-        let ret = f(&mut self.cmd_buf.0);
-        self.cmd_buf.1 = unsafe { BleStack_Request(&mut self.cmd_buf.0 as *mut u8) }.into();
+        let ret = f(&mut self.cmd_buf.0.packet);
+        self.cmd_buf.1 = unsafe { BleStack_Request(self.cmd_buf.0.packet.as_mut_ptr()) }.into();
 
         ret
     }
@@ -212,7 +230,7 @@ impl<'d> Controller<'d> {
             len => {
                 self.cmd_buf.1 = 0;
 
-                Some(&self.cmd_buf.0[..len])
+                Some(&self.cmd_buf.0.packet[..len])
             }
         }
     }
