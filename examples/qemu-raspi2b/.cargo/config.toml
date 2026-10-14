@@ -1,0 +1,8 @@
+[target.armv7a-none-eabi]
+runner = "qemu-run --machine raspi2b --arg device=usb-storage,drive=stick,port=1 --arg drive=if=none,id=stick,format=raw,snapshot=on,file=target/stick.img"
+
+[build]
+target = "armv7a-none-eabi"
+
+[env]
+DEFMT_LOG = "info"
