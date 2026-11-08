@@ -15,6 +15,7 @@ use crate::tables::{
 use crate::wb::channels::cpu1::IPCC_THREAD_OT_CMD_RSP_CHANNEL;
 use crate::wb::cmd::{CmdPacket, CmdSerialStub};
 use crate::wb::consts::TlPacketType;
+use crate::wb::shci::SchiCommandStatus;
 use crate::wb::unsafe_linked_list::LinkedListNode;
 
 pub struct Thread<'a> {
@@ -201,12 +202,17 @@ extern "C" fn TL_THREAD_SendAck() {
     // ack is done in runner loop, so this is a no-op
 }
 
+/// Called by ST's OpenThread library to ask CPU2 to save the Thread settings to flash.
+///
+/// Not supported yet
 #[unsafe(no_mangle)]
 extern "C" fn SHCI_C2_FLASH_StoreData(_ip: u8) -> u8 {
-    todo!()
+    warn!("saving Thread settings to flash is not supported");
+    SchiCommandStatus::ShciErrUnsupportedFeature as u8
 }
 
+/// Called by ST's OpenThread library to reset the device.
 #[unsafe(no_mangle)]
 extern "C" fn HAL_NVIC_SystemReset() {
-    todo!()
+    SCB::sys_reset()
 }

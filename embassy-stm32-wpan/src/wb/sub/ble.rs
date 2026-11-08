@@ -360,11 +360,13 @@ impl<'d> bt_hci::controller::Controller for ControllerAdapter<'d> {
     }
 
     async fn write_iso_data(&self, _packet: &bt_hci::data::IsoPacket<'_>) -> Result<(), Self::Error> {
-        todo!()
+        // The STM32WB wireless firmware has no ISO data path.
+        Err(embedded_io::ErrorKind::Unsupported)
     }
 
     async fn write_sync_data(&self, _packet: &bt_hci::data::SyncPacket<'_>) -> Result<(), Self::Error> {
-        todo!()
+        // The STM32WB wireless firmware has no SCO data path.
+        Err(embedded_io::ErrorKind::Unsupported)
     }
 
     async fn read<'a>(&self, buf: &'a mut Self::Buffer<'_>) -> Result<bt_hci::ControllerToHostPacket<'a>, Self::Error> {

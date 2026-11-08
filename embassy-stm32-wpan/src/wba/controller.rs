@@ -271,8 +271,16 @@ impl<'d> bt_hci::controller::Controller for ControllerAdapter<'d> {
         })
     }
 
-    async fn write_iso_data(&self, _packet: &bt_hci::data::IsoPacket<'_>) -> Result<(), Self::Error> {
-        todo!()
+    async fn write_iso_data(&self, packet: &bt_hci::data::IsoPacket<'_>) -> Result<(), Self::Error> {
+        use bt_hci::transport::{PacketToController, WithIndicator};
+
+        let mut controller = self.controller.borrow().borrow_mut();
+
+        controller.exec(|buf| {
+            WithIndicator::new(packet)
+                .write_hci(&mut buf[..])
+                .map_err(|_| embedded_io::ErrorKind::InvalidData)
+        })
     }
 
     async fn write_sync_data(&self, packet: &bt_hci::data::SyncPacket<'_>) -> Result<(), Self::Error> {
